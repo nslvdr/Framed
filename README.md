@@ -1,3 +1,3 @@
-# Screenshot App
+# Framed
 
 A screenshot app.
