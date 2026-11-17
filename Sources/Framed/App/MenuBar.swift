@@ -1,6 +1,5 @@
 import AppKit
 import Observation
-import ServiceManagement
 import SwiftUI
 
 /// The menu bar icon and the panel it opens: Framed's own "menu", drawn in the editor's style
@@ -159,9 +158,8 @@ final class MenuModel {
     }
 
     var recents: [Recent] = []
-    var hasPermission = true
+    var needsSetup = false
     var launchesAtLogin = false
-    var shortcutsConflict = false
     var showsCaptureMenu = false
     /// What the Capture button's main part does: the method of the last capture.
     var lastMode = CaptureMode.area
@@ -171,9 +169,8 @@ final class MenuModel {
     func refresh() {
         showsCaptureMenu = false
         lastMode = CaptureCoordinator.shared.lastMode
-        hasPermission = CGPreflightScreenCaptureAccess()
-        launchesAtLogin = SMAppService.mainApp.status == .enabled
-        shortcutsConflict = SystemShortcuts.conflictsWithFramed
+        needsSetup = OnboardingWindow.isNeeded
+        launchesAtLogin = LaunchAtLogin.isEnabled
         let urls = Exporter.recentCaptures(limit: 3)
         thumbnails = thumbnails.filter { urls.contains($0.key) }
         recents = urls.map { url in
@@ -186,25 +183,16 @@ final class MenuModel {
     // Each action closes the panel first; captures wait for it to disappear so it isn't captured.
 
     func capture(_ mode: CaptureMode) { close(); CaptureCoordinator.shared.capture(mode, after: CaptureCoordinator.menuDismissDelay) }
-    func allowScreenRecording() { close(); CaptureCoordinator.shared.requestPermission() }
+    func finishSetup() { close(); OnboardingWindow.shared.show() }
     func open(_ recent: Recent) { close(); CaptureCoordinator.shared.openFile(recent.url) }
     func reveal(_ recent: Recent) { close(); NSWorkspace.shared.activateFileViewerSelecting([recent.url]) }
     func copy(_ recent: Recent) { close(); Exporter.copyFile(recent.url); MenuBarController.shared.flashConfirmation() }
     func openCapturesFolder() { close(); Exporter.revealCapturesFolder() }
-    func takeOverShortcuts() { close(); SystemShortcuts.offerTakeover() }
     func quit() { NSApp.terminate(nil) }
 
     func setLaunchesAtLogin(_ enabled: Bool) {
-        let service = SMAppService.mainApp
-        do {
-            if enabled { try service.register() } else { try service.unregister() }
-        } catch {
-            close()
-            NSApp.activate()
-            NSAlert(error: error).runModal()
-        }
-        if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
-        launchesAtLogin = service.status == .enabled
+        LaunchAtLogin.set(enabled)
+        launchesAtLogin = LaunchAtLogin.isEnabled
     }
 
     /// "2880 × 1800", read from the PNG header without decoding it.
@@ -235,8 +223,8 @@ private struct MenuPanelView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
-            if !model.hasPermission {
-                MenuRow(symbol: "exclamationmark.triangle.fill", title: "Allow Screen Recording…", tint: .sun, action: model.allowScreenRecording)
+            if model.needsSetup {
+                MenuRow(symbol: "exclamationmark.triangle.fill", title: "Finish Setting Up Framed…", tint: .sun, action: model.finishSetup)
                     .padding(.top, 8)
             }
 
@@ -260,9 +248,6 @@ private struct MenuPanelView: View {
 
             MenuRow(symbol: "power", title: "Launch at Login", action: { model.setLaunchesAtLogin(!model.launchesAtLogin) }) {
                 PanelSwitch(isOn: model.launchesAtLogin)
-            }
-            if model.shortcutsConflict {
-                MenuRow(symbol: "keyboard", title: "Use ⇧⌘3 / ⇧⌘4 for Framed…", action: model.takeOverShortcuts)
             }
             MenuRow(symbol: "rectangle.portrait.and.arrow.right", title: "Quit Framed", action: model.quit) {
                 Text("⌘Q").foregroundStyle(Color.cream.opacity(0.45))

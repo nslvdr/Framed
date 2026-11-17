@@ -18,18 +18,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MenuBarController.shared.install()
             HotKeys.registerDefaults()
             BackgroundCursor.enable()
-            // One dialog per launch: the system permission prompt first, the shortcut offer later.
-            if CGPreflightScreenCaptureAccess() {
-                SystemShortcuts.offerTakeoverOnce()
-            } else {
-                CGRequestScreenCaptureAccess()
-            }
+            if OnboardingWindow.isNeeded { OnboardingWindow.shared.show() }
         }
     }
 
-    /// Clicking the Dock icon (shown while editors are open) brings them back.
+    /// Clicking the Dock icon (shown while editors or onboarding are open) brings them back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        MainActor.assumeIsolated { CaptureCoordinator.shared.showEditors() }
+        MainActor.assumeIsolated {
+            CaptureCoordinator.shared.showEditors()
+            if OnboardingWindow.shared.isVisible { OnboardingWindow.shared.show() }
+        }
         return false
     }
 
