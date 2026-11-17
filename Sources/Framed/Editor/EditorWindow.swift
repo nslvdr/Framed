@@ -50,10 +50,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         case .copy:
             guard let image = editorDocument.render() else { return }
             Exporter.copy(image, scale: editorDocument.scale)
+            MenuBarController.shared.flashConfirmation()
         case .save:
             guard let image = editorDocument.render() else { return }
             do {
                 try Exporter.save(image, scale: editorDocument.scale)
+                MenuBarController.shared.flashConfirmation()
             } catch {
                 NSAlert(error: error).beginSheetModal(for: window!)
                 return
@@ -150,11 +152,11 @@ private struct EditorView: View {
     }
 }
 
-/// Dark radial gradient with a subtle dot grid behind the image.
+/// Ink radial gradient (the icon's wall) with a subtle dot grid behind the image.
 private struct CanvasBackground: View {
     var body: some View {
         ZStack {
-            RadialGradient(colors: [Color(white: 0.155), Color(white: 0.088)], center: UnitPoint(x: 0.5, y: 0.3), startRadius: 0, endRadius: 900)
+            RadialGradient(colors: [.ink, .inkDeep], center: UnitPoint(x: 0.5, y: 0.3), startRadius: 0, endRadius: 900)
             Canvas { context, size in
                 let spacing: CGFloat = 18
                 var dots = Path()
@@ -281,8 +283,8 @@ private struct DockButton: View {
                 .frame(width: 38, height: 38)
                 .background {
                     RoundedRectangle(cornerRadius: 11)
-                        .fill(isOn ? Color.accentColor : Color.white.opacity(isHovering && isEnabled ? 0.08 : 0))
-                        .shadow(color: isOn ? Color.accentColor.opacity(0.45) : .clear, radius: 6, y: 3)
+                        .fill(isOn ? Color.terracotta : Color.white.opacity(isHovering && isEnabled ? 0.08 : 0))
+                        .shadow(color: isOn ? Color.terracotta.opacity(0.45) : .clear, radius: 6, y: 3)
                 }
                 .contentShape(Rectangle())
         }
@@ -313,16 +315,16 @@ private struct PillButtonStyle: ButtonStyle {
             .foregroundStyle(.white)
             .padding(.horizontal, 12)
             .frame(height: 30)
-            .background(prominent ? Color.accentColor : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .background(prominent ? Color.terracotta : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             .opacity(configuration.isPressed ? 0.75 : 1)
     }
 }
 
 private extension View {
-    /// Frosted dark panel used by the dock and the options popover.
+    /// Frosted ink panel used by the dock and the options popover.
     func glassPanel(cornerRadius: CGFloat) -> some View {
         background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
-            .background(Color(white: 0.17).opacity(0.6), in: RoundedRectangle(cornerRadius: cornerRadius))
+            .background(Color.ink.opacity(0.6), in: RoundedRectangle(cornerRadius: cornerRadius))
             .overlay(RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(.white.opacity(0.09)))
             .shadow(color: .black.opacity(0.45), radius: 16, y: 12)
     }

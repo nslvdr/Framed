@@ -14,7 +14,8 @@ final class CaptureCoordinator {
     /// Delay for captures started from the menu bar menu, so its fade-out isn't captured.
     static let menuDismissDelay: Duration = .milliseconds(250)
 
-    func captureInteractive(after delay: Duration = .zero) {
+    /// `windowMode` starts the overlay picking whole windows (Space still toggles it).
+    func captureInteractive(after delay: Duration = .zero, windowMode: Bool = false) {
         guard !isCapturing, ensurePermission() else { return }
         isCapturing = true
         Task {
@@ -22,7 +23,7 @@ final class CaptureCoordinator {
                 try await Task.sleep(for: delay)
                 let windows = ScreenCapturer.windowsFrontToBack()
                 let displays = try await ScreenCapturer.freezeDisplays()
-                showOverlays(displays: displays, windows: windows)
+                showOverlays(displays: displays, windows: windows, windowMode: windowMode)
             } catch {
                 isCapturing = false
                 presentError(error)
@@ -49,7 +50,7 @@ final class CaptureCoordinator {
 
     // MARK: Overlay
 
-    private func showOverlays(displays: [FrozenDisplay], windows: [WindowTarget]) {
+    private func showOverlays(displays: [FrozenDisplay], windows: [WindowTarget], windowMode: Bool) {
         for display in displays {
             let screenFrame = display.screen.frame
             let localWindows = windows.compactMap { window -> WindowTarget? in
@@ -60,6 +61,7 @@ final class CaptureCoordinator {
             let view = OverlayView(frame: CGRect(origin: .zero, size: screenFrame.size), frozen: display.image, windows: localWindows)
             view.onFinish = { [weak self] outcome in self?.finish(outcome, display: display) }
             view.onToggleWindowMode = { [weak self] in self?.toggleWindowMode() }
+            view.windowMode = windowMode
             overlays.append(OverlayWindow(screen: display.screen, content: view))
         }
 
@@ -132,6 +134,18 @@ final class CaptureCoordinator {
         controller.present()
     }
 
+    /// Reopens a saved capture (menu bar "Recent") in a new editor.
+    func openFile(_ url: URL) {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            return presentError(CocoaError(.fileReadCorruptFile, userInfo: [NSURLErrorKey: url]))
+        }
+        // Exporter tags PNGs with their DPI (144 for Retina), which gives back the original scale.
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let dpi = properties?[kCGImagePropertyDPIWidth] as? CGFloat ?? 72
+        openEditor(image: image, scale: max(1, (dpi / 72).rounded()))
+    }
+
     /// Brings open editors to the front (Dock icon click).
     func showEditors() {
         NSApp.activate()
@@ -145,7 +159,13 @@ final class CaptureCoordinator {
 
     private func ensurePermission() -> Bool {
         if CGPreflightScreenCaptureAccess() { return true }
-        if CGRequestScreenCaptureAccess() { return true }
+        requestPermission()
+        return false
+    }
+
+    /// Asks for Screen Recording access, pointing to System Settings once the system prompt was used up.
+    func requestPermission() {
+        if CGRequestScreenCaptureAccess() { return }
         let alert = NSAlert()
         alert.messageText = "Framed needs Screen Recording access"
         alert.informativeText = "Enable Framed in System Settings → Privacy & Security → Screen & System Audio Recording. If macOS asks, let it quit and reopen Framed, then try again."
@@ -156,7 +176,6 @@ final class CaptureCoordinator {
            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
         }
-        return false
     }
 
     private func presentError(_ error: Error) {

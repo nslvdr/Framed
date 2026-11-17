@@ -8,6 +8,8 @@
     <string>Framed</string>
     <key>CFBundleIdentifier</key>
     <string>app.framed.Framed</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleExecutable</key>
     <string>Framed</string>
     <key>CFBundlePackageType</key>

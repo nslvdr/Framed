@@ -12,7 +12,7 @@ final class EditorDocument {
         var crop: CGRect
     }
 
-    static let palette: [NSColor] = [.systemRed, .systemOrange, .systemYellow, .systemGreen, .systemBlue, .systemPurple, .white, .black]
+    static let palette: [NSColor] = [.systemRed, Theme.terracotta, .systemYellow, .systemGreen, .systemBlue, .systemPurple, .white, .black]
 
     let image: CGImage
     let scale: CGFloat

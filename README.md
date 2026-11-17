@@ -20,6 +20,8 @@ On first capture, grant **Screen & System Audio Recording** permission in System
 
 These replace the macOS screenshot shortcuts. On launch, Framed offers to turn the system ones off if they are still enabled (they can be re-enabled in System Settings → Keyboard → Keyboard Shortcuts… → Screenshots).
 
+The menu bar item also offers Capture Window, your five most recent saves (click to reopen in the editor, ⌥-click to show in Finder) and Launch at Login. The icon flashes a checkmark after a copy or save.
+
 | Editor | |
 |---|---|
 | ⌘C / ⌃C / Return | Copy to clipboard and close |

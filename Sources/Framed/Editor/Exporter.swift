@@ -3,7 +3,7 @@ import AppKit
 /// Clipboard and file output for finished captures.
 @MainActor
 enum Exporter {
-    static var capturesFolder: URL {
+    nonisolated static var capturesFolder: URL {
         URL.picturesDirectory.appending(path: "Framed", directoryHint: .isDirectory)
     }
 
@@ -46,6 +46,16 @@ enum Exporter {
     static func revealCapturesFolder() {
         try? FileManager.default.createDirectory(at: capturesFolder, withIntermediateDirectories: true)
         NSWorkspace.shared.open(capturesFolder)
+    }
+
+    /// The newest PNGs in `folder`, newest first.
+    nonisolated static func recentCaptures(in folder: URL = capturesFolder, limit: Int) -> [URL] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.creationDateKey],
+                                                                  options: .skipsHiddenFiles)) ?? []
+        let dated = files.filter { $0.pathExtension.lowercased() == "png" }.map { url in
+            (url, (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast)
+        }
+        return dated.sorted { $0.1 > $1.1 }.prefix(limit).map(\.0)
     }
 
     /// e.g. "Framed 2026-11-17 at 20.12.03.png"
