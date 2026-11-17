@@ -2,6 +2,23 @@
 
 A polished screenshot app for macOS 15+. It lives in the menu bar and every capture opens straight into an annotation editor.
 
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nslvdr/Framed/main/scripts/install.sh | bash
+```
+
+This installs the latest release into `/Applications` (or `~/Applications`) and launches it. Run it again to update. Framed isn't notarized, so a browser-downloaded copy would be blocked by Gatekeeper; the script sidesteps that.
+
+## Release
+
+```sh
+scripts/make-signing-cert.sh   # once per machine: creates the self-signed "Framed Release" identity
+scripts/release.sh 0.2.0       # universal build → tag v0.2.0 → GitHub release with Framed.zip
+```
+
+Releases are signed with that self-signed identity: it carries no personal details and keeps users' Screen Recording permission across updates. Always use the same certificate (restore it from the `.p12` backup on a new machine); a new one makes every user re-grant the permission once.
+
 ## Build & run
 
 ```sh
