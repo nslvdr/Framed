@@ -119,71 +119,67 @@ final class OnboardingModel {
         refresh()
     }
 
-    func toggleLaunchAtLogin() {
-        LaunchAtLogin.set(!launchesAtLogin)
+    /// Turning it back off lives in the menu bar panel.
+    func enableLaunchAtLogin() {
+        LaunchAtLogin.set(true)
         refresh()
     }
 }
 
 // MARK: - Views
 
+/// "Gallery wall" design: each step hangs as a framed picture (cream mat, terracotta frame, like
+/// the app icon) on the ink wall.
 private struct OnboardingView: View {
     @Bindable var model: OnboardingModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 52, height: 52)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Welcome to Framed").font(.system(size: 20, weight: .semibold)).foregroundStyle(Color.cream)
-                    Text("Three quick steps and you're ready to capture.").font(.system(size: 12.5)).foregroundStyle(Color.cream.opacity(0.6))
-                }
+        VStack(spacing: 22) {
+            VStack(spacing: 8) {
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
+                Text("Hang Framed on your wall").font(.system(size: 21, weight: .semibold, design: .serif)).foregroundStyle(Color.cream)
+                Text("Two quick permissions and it's ready.").font(.system(size: 12.5)).foregroundStyle(Color.cream.opacity(0.6))
             }
-            .padding(.bottom, 20)
 
-            VStack(spacing: 10) {
-                StepRow(number: 1, title: "Allow Screen Recording",
-                        detail: "Framed needs to see your screen to capture it. Turn Framed on under Privacy & Security → Screen & System Audio Recording.",
-                        isDone: model.hasPermission) {
-                    HStack(spacing: 12) {
-                        Button(model.askedForPermission ? "Open System Settings" : "Allow Screen Recording", action: model.allowScreenRecording)
-                            .buttonStyle(StepButtonStyle())
-                        if model.askedForPermission {
-                            Button("Allowed it? Reopen Framed", action: model.relaunch).buttonStyle(LinkStyle())
-                        }
+            VStack(spacing: 18) {
+                StepFrame(symbol: "rectangle.dashed.badge.record", title: "Allow Screen Recording",
+                          detail: "So Framed can see what you capture.", isDone: model.hasPermission) {
+                    Button(model.askedForPermission ? "Open Settings" : "Allow", action: model.allowScreenRecording)
+                        .buttonStyle(StepButtonStyle())
+                } footer: {
+                    // macOS may only apply the grant after a relaunch.
+                    if model.askedForPermission {
+                        Button("Allowed it? Reopen Framed", action: model.relaunch).buttonStyle(LinkStyle())
                     }
                 }
-                StepRow(number: 2, title: "Use ⇧⌘3 and ⇧⌘4 for Framed",
-                        detail: "Turns off the macOS screenshot shortcuts so the keys open Framed instead of both tools. You can turn them back on in System Settings → Keyboard.",
-                        isDone: model.shortcutsFree) {
-                    Button("Turn Off macOS Shortcuts", action: model.turnOffSystemShortcuts).buttonStyle(StepButtonStyle())
+                StepFrame(symbol: "command", title: "Use ⇧⌘3 and ⇧⌘4",
+                          detail: "Turns off the macOS screenshot shortcuts so the keys open Framed.", isDone: model.shortcutsFree) {
+                    Button("Turn Off", action: model.turnOffSystemShortcuts).buttonStyle(StepButtonStyle())
                 }
-                StepRow(number: 3, title: "Launch at Login", detail: "Keeps Framed in the menu bar after you restart your Mac.",
-                        isDone: model.launchesAtLogin, isOptional: true, showsActionWhenDone: true) {
-                    Button(model.launchesAtLogin ? "Turn Off" : "Turn On", action: model.toggleLaunchAtLogin)
-                        .buttonStyle(StepButtonStyle(prominent: !model.launchesAtLogin))
+                StepFrame(symbol: "power", title: "Launch at Login", detail: "Stay in the menu bar after a restart.",
+                          isDone: model.launchesAtLogin, isOptional: true, doneLabel: "On") {
+                    Button("Turn On", action: model.enableLaunchAtLogin).buttonStyle(StepButtonStyle())
                 }
             }
 
             HStack {
-                Text(model.isComplete ? "You're all set. Press ⇧⌘4 to capture an area." : "Finish the two required steps to start.")
+                Text(model.isComplete ? "You're all set. Press ⇧⌘4 to capture." : "\(requiredDone) of 2 required done")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.cream.opacity(0.6))
                 Spacer(minLength: 12)
                 Button("Start Using Framed", action: model.finish)
-                    .buttonStyle(StepButtonStyle())
+                    .buttonStyle(StepButtonStyle(large: true))
                     .disabled(!model.isComplete)
                     .keyboardShortcut(.defaultAction)
             }
-            .padding(.top, 20)
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 36) // clears the transparent title bar
-        .padding(.bottom, 22)
+        .padding(.horizontal, 28)
+        .padding(.top, 20) // below the transparent title bar
+        .padding(.bottom, 26)
         .frame(width: 500)
         .background {
             ZStack {
-                RadialGradient(colors: [.ink, .inkDeep], center: .top, startRadius: 0, endRadius: 520)
+                RadialGradient(colors: [.ink, .inkDeep], center: .top, startRadius: 0, endRadius: 560)
                 DotGrid(spacing: 14)
             }
             .ignoresSafeArea()
@@ -191,78 +187,83 @@ private struct OnboardingView: View {
         .animation(.snappy(duration: 0.2), value: model.hasPermission)
         .animation(.snappy(duration: 0.2), value: model.shortcutsFree)
         .animation(.snappy(duration: 0.2), value: model.launchesAtLogin)
+        .animation(.snappy(duration: 0.2), value: model.askedForPermission)
         .environment(\.colorScheme, .dark)
     }
+
+    private var requiredDone: Int { [model.hasPermission, model.shortcutsFree].filter { $0 }.count }
 }
 
-/// One checklist step: a numbered badge that turns into a check, the explanation and its action.
-/// Required steps drop their action once done; the check is all that's left.
-private struct StepRow<Action: View>: View {
-    let number: Int
+/// One step as a framed picture: icon, title and explanation on the mat, and its action on the
+/// right, replaced by a "Done" seal once the system reports the step complete.
+private struct StepFrame<Action: View, Footer: View>: View {
+    let symbol: String
     let title: String
     let detail: String
     let isDone: Bool
     var isOptional = false
-    var showsActionWhenDone = false
+    var doneLabel = "Done"
     @ViewBuilder var action: Action
+    @ViewBuilder var footer: Footer
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(isDone ? Color.terracotta : .clear)
-                    .overlay(Circle().strokeBorder(isDone ? Color.terracottaDeep : Color.cream.opacity(0.3), lineWidth: 1.5))
-                if isDone {
-                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).transition(.scale.combined(with: .opacity))
-                } else {
-                    Text("\(number)").font(.system(size: 12, weight: .semibold))
-                }
-            }
-            .foregroundStyle(Color.cream)
-            .frame(width: 24, height: 24)
-            .accessibilityLabel(isDone ? "Done" : "Step \(number)")
-
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 12) {
+            Image(systemName: symbol).font(.system(size: 18, weight: .medium)).foregroundStyle(Color.terracottaDeep).frame(width: 26)
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(title).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Color.cream)
+                    Text(title).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Color.ink)
                     if isOptional {
                         Text("OPTIONAL").font(.system(size: 9, weight: .semibold)).kerning(0.5)
-                            .foregroundStyle(Color.cream.opacity(0.55))
+                            .foregroundStyle(Color.ink.opacity(0.55))
                             .padding(.horizontal, 5).padding(.vertical, 2)
-                            .background(Color.cream.opacity(0.08), in: Capsule())
+                            .background(Color.ink.opacity(0.08), in: Capsule())
                     }
                 }
-                Text(detail)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Color.cream.opacity(0.6))
-                    .fixedSize(horizontal: false, vertical: true)
-                if !isDone || showsActionWhenDone {
-                    action.padding(.top, 6)
-                }
+                Text(detail).font(.system(size: 11.5)).foregroundStyle(Color.ink.opacity(0.6)).fixedSize(horizontal: false, vertical: true)
+                if !isDone { footer.padding(.top, 2) }
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            if isDone {
+                Label(doneLabel, systemImage: "checkmark.seal.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.terracottaDeep)
+                    .transition(.scale.combined(with: .opacity))
+            } else {
+                action
+            }
         }
-        .padding(14)
-        .background(Color.cream.opacity(isDone ? 0.035 : 0.07), in: shape)
-        .overlay(shape.strokeBorder(isDone ? Color.terracotta.opacity(0.45) : .white.opacity(0.08)))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(minHeight: 62)
+        .opacity(isDone ? 0.75 : 1)
+        .framedPanel(cornerRadius: 6, frameWidth: 5)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(isDone ? "\(title), done" : title)
     }
 }
 
-/// Terracotta button with the darker lip of the menu bar's Capture button; `prominent: false` is a quiet cream variant.
+extension StepFrame where Footer == EmptyView {
+    init(symbol: String, title: String, detail: String, isDone: Bool, isOptional: Bool = false, doneLabel: String = "Done",
+         @ViewBuilder action: () -> Action) {
+        self.init(symbol: symbol, title: title, detail: detail, isDone: isDone, isOptional: isOptional, doneLabel: doneLabel,
+                  action: action, footer: { EmptyView() })
+    }
+}
+
+/// Terracotta button with a darker lip, like the menu bar's Capture button.
 private struct StepButtonStyle: ButtonStyle {
-    var prominent = true
+    var large = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: large ? 10 : 8, style: .continuous)
         configuration.label
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: large ? 13.5 : 12, weight: .semibold))
             .foregroundStyle(Color.cream)
-            .padding(.horizontal, 12)
-            .frame(height: 28)
-            .background(prominent ? Color.terracotta : Color.cream.opacity(0.12), in: shape)
-            .background(shape.fill(prominent ? Color.terracottaDeep : .black.opacity(0.3)).offset(y: 2))
+            .padding(.horizontal, large ? 18 : 12)
+            .frame(height: large ? 34 : 28)
+            .background(Color.terracotta, in: shape)
+            .background(shape.fill(Color.terracottaDeep).offset(y: 2))
             .brightness(configuration.isPressed ? -0.08 : 0)
             .opacity(isEnabled ? 1 : 0.35)
             .contentShape(shape)
@@ -272,8 +273,8 @@ private struct StepButtonStyle: ButtonStyle {
 private struct LinkStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(Color.sun.opacity(configuration.isPressed ? 0.6 : 1))
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color.terracottaDeep.opacity(configuration.isPressed ? 0.6 : 1))
             .contentShape(Rectangle())
     }
 }
