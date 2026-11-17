@@ -157,16 +157,7 @@ private struct CanvasBackground: View {
     var body: some View {
         ZStack {
             RadialGradient(colors: [.ink, .inkDeep], center: UnitPoint(x: 0.5, y: 0.3), startRadius: 0, endRadius: 900)
-            Canvas { context, size in
-                let spacing: CGFloat = 18
-                var dots = Path()
-                for x in stride(from: spacing / 2, to: size.width, by: spacing) {
-                    for y in stride(from: spacing / 2, to: size.height, by: spacing) {
-                        dots.addEllipse(in: CGRect(x: x - 0.75, y: y - 0.75, width: 1.5, height: 1.5))
-                    }
-                }
-                context.fill(dots, with: .color(.white.opacity(0.05)))
-            }
+            DotGrid()
         }
     }
 }
@@ -195,7 +186,7 @@ private struct Dock: View {
                     .fill(Color(nsColor: document.color))
                     .frame(width: 20, height: 20)
                     .padding(2.5)
-                    .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1.5))
+                    .overlay(Circle().strokeBorder(Color.ink, lineWidth: 1.5))
                     .frame(width: 38, height: 38)
                     .contentShape(Rectangle())
             }
@@ -212,7 +203,7 @@ private struct Dock: View {
                 .disabled(!document.canRedo)
         }
         .padding(6)
-        .glassPanel(cornerRadius: 16)
+        .framedPanel(cornerRadius: 14)
         .focusable(false)
     }
 }
@@ -229,26 +220,31 @@ private struct OptionsPopover: View {
                     Button { document.setColor(color) } label: {
                         Circle()
                             .fill(Color(nsColor: color))
-                            .overlay(Circle().strokeBorder(.white.opacity(0.15), lineWidth: 0.5))
+                            .overlay(Circle().strokeBorder(Color.ink.opacity(0.2), lineWidth: 0.5))
                             .frame(width: 18, height: 18)
                             .padding(2.5)
-                            .overlay(Circle().strokeBorder(.white.opacity(isOn ? 0.95 : 0), lineWidth: 1.5))
+                            .overlay(Circle().strokeBorder(Color.ink.opacity(isOn ? 1 : 0), lineWidth: 1.5))
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
                 }
             }
 
-            Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 20)
+            Rectangle().fill(Color.ink.opacity(0.14)).frame(width: 1, height: 20)
 
             HStack(spacing: 4) {
                 ForEach(StrokeSize.allCases) { size in
                     Button { document.setSize(size) } label: {
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(.white.opacity(0.9))
+                            .fill(Color.ink)
                             .frame(width: 14, height: [2, 4, 7][size.rawValue])
                             .frame(width: 30, height: 26)
-                            .background(document.size == size ? Color.white.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                            .background {
+                                if document.size == size {
+                                    RoundedRectangle(cornerRadius: 7).fill(Color.sand)
+                                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.clay))
+                                }
+                            }
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -258,7 +254,7 @@ private struct OptionsPopover: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .glassPanel(cornerRadius: 14)
+        .framedPanel(cornerRadius: 12)
         .focusable(false)
     }
 }
@@ -279,12 +275,16 @@ private struct DockButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(isOn ? Color.white : Color.white.opacity(isEnabled ? 0.85 : 0.3))
+                .foregroundStyle(isOn ? Color.cream : Color.ink.opacity(isEnabled ? 1 : 0.3))
                 .frame(width: 38, height: 38)
                 .background {
-                    RoundedRectangle(cornerRadius: 11)
-                        .fill(isOn ? Color.terracotta : Color.white.opacity(isHovering && isEnabled ? 0.08 : 0))
-                        .shadow(color: isOn ? Color.terracotta.opacity(0.45) : .clear, radius: 6, y: 3)
+                    let tile = RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    if isOn {
+                        tile.fill(Color.terracotta)
+                            .background(tile.fill(Color.terracottaDeep).offset(y: 2)) // raised, pressable edge
+                    } else {
+                        tile.fill(Color.ink.opacity(isHovering && isEnabled ? 0.07 : 0))
+                    }
                 }
                 .contentShape(Rectangle())
         }
@@ -295,38 +295,35 @@ private struct DockButton: View {
     }
 }
 
-private final class HoverState: ObservableObject {
-    @Published var isHovering = false
-}
-
 private struct DockSeparator: View {
     var body: some View {
-        Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 22).padding(.horizontal, 5)
+        Rectangle().fill(Color.ink.opacity(0.14)).frame(width: 1, height: 22).padding(.horizontal, 5)
     }
 }
 
+/// Title bar buttons: prominent is a framed terracotta button with a raised edge, the other a quiet cream outline.
 private struct PillButtonStyle: ButtonStyle {
     let prominent: Bool
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        return configuration.label
             .font(.system(size: 13, weight: .medium))
             .labelStyle(.titleAndIcon)
-            .foregroundStyle(.white)
+            .foregroundStyle(prominent ? Color.white : Color.cream)
             .padding(.horizontal, 12)
             .frame(height: 30)
-            .background(prominent ? Color.terracotta : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .background {
+                if prominent {
+                    shape.fill(Color.terracotta)
+                        .overlay(shape.strokeBorder(Color.terracottaDeep))
+                        .background(shape.fill(Color.terracottaDeep).offset(y: 2))
+                } else {
+                    shape.fill(Color.cream.opacity(0.08))
+                        .overlay(shape.strokeBorder(Color.cream.opacity(0.16)))
+                }
+            }
             .opacity(configuration.isPressed ? 0.75 : 1)
-    }
-}
-
-private extension View {
-    /// Frosted ink panel used by the dock and the options popover.
-    func glassPanel(cornerRadius: CGFloat) -> some View {
-        background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
-            .background(Color.ink.opacity(0.6), in: RoundedRectangle(cornerRadius: cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(.white.opacity(0.09)))
-            .shadow(color: .black.opacity(0.45), radius: 16, y: 12)
     }
 }
 
