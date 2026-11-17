@@ -42,33 +42,4 @@ enum SystemShortcuts {
         activate.arguments = ["-u"]
         try? activate.run()
     }
-
-    private static let offeredKey = "didOfferShortcutTakeover"
-
-    /// Offers the takeover automatically only once; afterwards it lives in the menu bar menu.
-    @MainActor
-    static func offerTakeoverOnce() {
-        guard !UserDefaults.standard.bool(forKey: offeredKey), conflictsWithFramed else { return }
-        UserDefaults.standard.set(true, forKey: offeredKey)
-        offerTakeover()
-    }
-
-    /// Offers to turn the conflicting macOS shortcuts off (menu item and first launch).
-    @MainActor
-    static func offerTakeover() {
-        NSApp.activate()
-        guard conflictsWithFramed else {
-            let alert = NSAlert()
-            alert.messageText = "Framed already uses ⇧⌘3 and ⇧⌘4"
-            alert.informativeText = "The macOS screenshot shortcuts are off. You can turn them back on in System Settings → Keyboard → Keyboard Shortcuts → Screenshots."
-            alert.runModal()
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = "Use Framed for ⇧⌘3 and ⇧⌘4?"
-        alert.informativeText = "The macOS screenshot shortcuts are still on, so pressing them opens both the system tool and Framed. Framed can turn the system ones off. You can turn them back on any time in System Settings → Keyboard → Keyboard Shortcuts → Screenshots."
-        alert.addButton(withTitle: "Turn Off macOS Shortcuts")
-        alert.addButton(withTitle: "Not Now")
-        if alert.runModal() == .alertFirstButtonReturn { disable() }
-    }
 }

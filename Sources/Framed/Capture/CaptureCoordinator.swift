@@ -165,7 +165,7 @@ final class CaptureCoordinator {
         controller.onClose = { [weak self, weak controller] in
             guard let self else { return }
             editors.removeAll { $0 === controller }
-            guard editors.isEmpty else { return }
+            guard editors.isEmpty, !OnboardingWindow.shared.isVisible else { return }
             NSApp.setActivationPolicy(.accessory)
             // Hand focus back to the app the user came from, so pasting works right away.
             if !isCapturing { NSApp.hide(nil) }
@@ -192,30 +192,18 @@ final class CaptureCoordinator {
         editors.forEach { $0.window?.makeKeyAndOrderFront(nil) }
     }
 
+    var hasOpenEditors: Bool { !editors.isEmpty }
+
     /// Number of open editors holding annotations that would be lost.
     var unsavedEditorCount: Int { editors.count { $0.editorDocument.canUndo } }
 
     // MARK: Permission & errors
 
+    /// Without Screen Recording access, brings up onboarding, which walks through granting it.
     private func ensurePermission() -> Bool {
         if CGPreflightScreenCaptureAccess() { return true }
-        requestPermission()
+        OnboardingWindow.shared.show()
         return false
-    }
-
-    /// Asks for Screen Recording access, pointing to System Settings once the system prompt was used up.
-    func requestPermission() {
-        if CGRequestScreenCaptureAccess() { return }
-        let alert = NSAlert()
-        alert.messageText = "Framed needs Screen Recording access"
-        alert.informativeText = "Enable Framed in System Settings → Privacy & Security → Screen & System Audio Recording. If macOS asks, let it quit and reopen Framed, then try again."
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Cancel")
-        NSApp.activate()
-        if alert.runModal() == .alertFirstButtonReturn,
-           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     private func presentError(_ error: Error) {
