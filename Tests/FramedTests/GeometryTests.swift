@@ -30,3 +30,19 @@ struct GeometryTests {
         #expect(path.contains(CGPoint(x: 60, y: 20)))
     }
 }
+
+struct CropEdgesTests {
+    let crop = CGRect(x: 100, y: 100, width: 200, height: 100)
+
+    @Test func detectsSidesAndCorners() {
+        #expect(CropEdges.hit(CGPoint(x: 102, y: 150), rect: crop, tolerance: 5) == .left)
+        #expect(CropEdges.hit(CGPoint(x: 298, y: 203), rect: crop, tolerance: 5) == [.right, .bottom])
+        #expect(CropEdges.hit(CGPoint(x: 200, y: 150), rect: crop, tolerance: 5).isEmpty) // interior draws a new crop
+    }
+
+    @Test func movingAnEdgeKeepsTheOthersAndStaysInImage() {
+        let bounds = CGRect(x: 0, y: 0, width: 400, height: 300)
+        #expect(CropEdges.left.resizing(crop, by: CGVector(dx: -30, dy: 50), within: bounds) == CGRect(x: 70, y: 100, width: 230, height: 100))
+        #expect(CropEdges([.right, .bottom]).resizing(crop, by: CGVector(dx: 500, dy: 500), within: bounds) == CGRect(x: 100, y: 100, width: 300, height: 200))
+    }
+}

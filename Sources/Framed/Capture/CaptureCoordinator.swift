@@ -7,24 +7,36 @@ final class CaptureCoordinator {
 
     private var overlays: [OverlayWindow] = []
     private var editors: [EditorWindowController] = []
+    /// True from the trigger until the editor opens (or the capture is cancelled), so a second
+    /// hotkey press during the async freeze can't start a parallel capture.
+    private var isCapturing = false
 
-    func captureInteractive() {
-        guard overlays.isEmpty, ensurePermission() else { return }
+    /// Delay for captures started from the menu bar menu, so its fade-out isn't captured.
+    static let menuDismissDelay: Duration = .milliseconds(250)
+
+    func captureInteractive(after delay: Duration = .zero) {
+        guard !isCapturing, ensurePermission() else { return }
+        isCapturing = true
         Task {
             do {
+                try await Task.sleep(for: delay)
                 let windows = ScreenCapturer.windowsFrontToBack()
                 let displays = try await ScreenCapturer.freezeDisplays()
                 showOverlays(displays: displays, windows: windows)
             } catch {
+                isCapturing = false
                 presentError(error)
             }
         }
     }
 
-    func captureFullscreen() {
-        guard overlays.isEmpty, ensurePermission() else { return }
+    func captureFullscreen(after delay: Duration = .zero) {
+        guard !isCapturing, ensurePermission() else { return }
+        isCapturing = true
         Task {
+            defer { isCapturing = false }
             do {
+                try await Task.sleep(for: delay)
                 let displays = try await ScreenCapturer.freezeDisplays()
                 let mouse = NSEvent.mouseLocation
                 guard let display = displays.first(where: { $0.screen.frame.contains(mouse) }) ?? displays.first else { return }
@@ -45,32 +57,44 @@ final class CaptureCoordinator {
                 local.frame = window.frame.offsetBy(dx: -screenFrame.minX, dy: -screenFrame.minY)
                 return local.frame.intersects(CGRect(origin: .zero, size: screenFrame.size)) ? local : nil
             }
-            let view = OverlayView(frame: CGRect(origin: .zero, size: screenFrame.size), frozen: display.image, windows: localWindows) { [weak self] outcome in
-                self?.finish(outcome, display: display)
-            }
+            let view = OverlayView(frame: CGRect(origin: .zero, size: screenFrame.size), frozen: display.image, windows: localWindows)
+            view.onFinish = { [weak self] outcome in self?.finish(outcome, display: display) }
+            view.onToggleWindowMode = { [weak self] in self?.toggleWindowMode() }
             overlays.append(OverlayWindow(screen: display.screen, content: view))
         }
 
-        NSApp.activate()
         let mouse = NSEvent.mouseLocation
         for overlay in overlays {
             overlay.orderFrontRegardless()
             overlay.makeFirstResponder(overlay.contentView)
+            (overlay.contentView as? OverlayView)?.syncMouse()
         }
         (overlays.first { $0.frame.contains(mouse) } ?? overlays.first)?.makeKey()
         NSCursor.crosshair.set() // show the selection cursor right away, before the mouse moves
     }
 
+    /// Space switches every display's overlay together, so the mode doesn't depend on the screen.
+    private func toggleWindowMode() {
+        let views = overlays.compactMap { $0.contentView as? OverlayView }
+        let enabled = !(views.first?.windowMode ?? false)
+        views.forEach { $0.windowMode = enabled }
+    }
+
     private func finish(_ outcome: OverlayView.Outcome?, display: FrozenDisplay) {
         overlays.forEach { $0.orderOut(nil) }
         overlays.removeAll()
-        guard let outcome else { return }
+        guard let outcome else {
+            isCapturing = false
+            return
+        }
 
         switch outcome {
         case .area(let rect):
             openCropped(display: display, rect: rect)
+            isCapturing = false
         case .window(let window):
             Task {
+                defer { isCapturing = false }
                 do {
                     let capture = try await ScreenCapturer.captureWindow(window.id)
                     openEditor(image: capture.image, scale: capture.scale)
@@ -92,13 +116,30 @@ final class CaptureCoordinator {
     // MARK: Editor
 
     private func openEditor(image: CGImage, scale: CGFloat) {
-        let controller = EditorWindowController(document: EditorDocument(image: image, scale: scale))
+        // While editors are open Framed shows in the Dock and ⌘Tab, so a window that slips
+        // behind another app can always be brought back.
+        NSApp.setActivationPolicy(.regular)
+        let controller = EditorWindowController(document: EditorDocument(image: image, scale: scale), cascadeIndex: editors.count)
         controller.onClose = { [weak self, weak controller] in
-            self?.editors.removeAll { $0 === controller }
+            guard let self else { return }
+            editors.removeAll { $0 === controller }
+            guard editors.isEmpty else { return }
+            NSApp.setActivationPolicy(.accessory)
+            // Hand focus back to the app the user came from, so pasting works right away.
+            if !isCapturing { NSApp.hide(nil) }
         }
         editors.append(controller)
         controller.present()
     }
+
+    /// Brings open editors to the front (Dock icon click).
+    func showEditors() {
+        NSApp.activate()
+        editors.forEach { $0.window?.makeKeyAndOrderFront(nil) }
+    }
+
+    /// Number of open editors holding annotations that would be lost.
+    var unsavedEditorCount: Int { editors.count { $0.editorDocument.canUndo } }
 
     // MARK: Permission & errors
 
@@ -107,7 +148,7 @@ final class CaptureCoordinator {
         if CGRequestScreenCaptureAccess() { return true }
         let alert = NSAlert()
         alert.messageText = "Framed needs Screen Recording access"
-        alert.informativeText = "Enable Framed in System Settings → Privacy & Security → Screen & System Audio Recording, then try again."
+        alert.informativeText = "Enable Framed in System Settings → Privacy & Security → Screen & System Audio Recording. If macOS asks, let it quit and reopen Framed, then try again."
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")
         NSApp.activate()

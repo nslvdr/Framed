@@ -21,16 +21,15 @@ enum CaptureError: LocalizedError {
 
 @MainActor
 enum ScreenCapturer {
-    /// Snapshots every display, excluding Framed's own windows (e.g. open editors).
+    /// Snapshots every display exactly as it looks, including any open Framed editors, so the
+    /// capture matches what the user sees through the transparent overlay.
     static func freezeDisplays() async throws -> [FrozenDisplay] {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let ownApps = content.applications.filter { $0.processID == pid }
 
         var result: [FrozenDisplay] = []
         for screen in NSScreen.screens {
             guard let display = content.displays.first(where: { $0.displayID == screen.displayID }) else { continue }
-            let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+            let filter = SCContentFilter(display: display, excludingWindows: [])
             let config = SCStreamConfiguration()
             config.width = Int(screen.frame.width * screen.backingScaleFactor)
             config.height = Int(screen.frame.height * screen.backingScaleFactor)
@@ -42,15 +41,13 @@ enum ScreenCapturer {
         return result
     }
 
-    /// Normal-level windows of other apps, ordered front to back (for hit-testing).
+    /// Normal-level windows (including Framed editors), ordered front to back, for hit-testing.
     static func windowsFrontToBack() -> [WindowTarget] {
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []
-        let pid = ProcessInfo.processInfo.processIdentifier
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         return info.compactMap { window in
             guard (window[kCGWindowLayer as String] as? Int) == 0,
-                  (window[kCGWindowOwnerPID as String] as? pid_t) != pid,
                   (window[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let id = window[kCGWindowNumber as String] as? CGWindowID,
                   let bounds = window[kCGWindowBounds as String] as? NSDictionary,

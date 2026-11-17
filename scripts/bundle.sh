@@ -21,5 +21,6 @@ echo "Built $APP (signed with: ${IDENTITY:-ad-hoc})"
 
 if [[ "${1:-}" == "--run" ]]; then
     pkill -x Framed || true
+    while pgrep -x Framed >/dev/null; do sleep 0.1; done # wait for the old instance to exit
     open "$APP"
 fi
