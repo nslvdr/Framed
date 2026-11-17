@@ -163,11 +163,14 @@ final class MenuModel {
     var launchesAtLogin = false
     var shortcutsConflict = false
     var showsCaptureMenu = false
+    /// What the Capture button's main part does: the method of the last capture.
+    var lastMode = CaptureMode.area
     @ObservationIgnored var close: () -> Void = {}
     @ObservationIgnored private var thumbnails: [URL: NSImage] = [:]
 
     func refresh() {
         showsCaptureMenu = false
+        lastMode = CaptureCoordinator.shared.lastMode
         hasPermission = CGPreflightScreenCaptureAccess()
         launchesAtLogin = SMAppService.mainApp.status == .enabled
         shortcutsConflict = SystemShortcuts.conflictsWithFramed
@@ -182,9 +185,7 @@ final class MenuModel {
 
     // Each action closes the panel first; captures wait for it to disappear so it isn't captured.
 
-    func captureArea() { close(); CaptureCoordinator.shared.captureInteractive(after: CaptureCoordinator.menuDismissDelay) }
-    func captureWindow() { close(); CaptureCoordinator.shared.captureInteractive(after: CaptureCoordinator.menuDismissDelay, windowMode: true) }
-    func captureScreen() { close(); CaptureCoordinator.shared.captureFullscreen(after: CaptureCoordinator.menuDismissDelay) }
+    func capture(_ mode: CaptureMode) { close(); CaptureCoordinator.shared.capture(mode, after: CaptureCoordinator.menuDismissDelay) }
     func allowScreenRecording() { close(); CaptureCoordinator.shared.requestPermission() }
     func open(_ recent: Recent) { close(); CaptureCoordinator.shared.openFile(recent.url) }
     func reveal(_ recent: Recent) { close(); NSWorkspace.shared.activateFileViewerSelecting([recent.url]) }
@@ -301,14 +302,15 @@ private struct MenuPanelView: View {
                 Text("Framed").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.cream)
                 if let version { Text("Version \(version)").font(.system(size: 10.5)).foregroundStyle(Color.cream.opacity(0.55)) }
             }
-            Spacer()
+            Spacer(minLength: 8)
             CaptureSplitButton(model: model)
+                .fixedSize() // never truncate "Capture"; the title column gives way instead
         }
     }
 }
 
-/// Terracotta split button: the main part captures an area (also Return), the chevron opens the
-/// dropdown with all three capture modes.
+/// Terracotta split button: the main part repeats the last capture method (also Return), the
+/// chevron opens the dropdown with all three capture modes.
 private struct CaptureSplitButton: View {
     @Bindable var model: MenuModel
     @StateObject private var mainHover = HoverState()
@@ -317,8 +319,8 @@ private struct CaptureSplitButton: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
         HStack(spacing: 0) {
-            Button(action: model.captureArea) {
-                Label("Capture", systemImage: "rectangle.dashed")
+            Button { model.capture(model.lastMode) } label: {
+                Label(model.lastMode.title, systemImage: model.lastMode.symbol)
                     .font(.system(size: 12, weight: .semibold))
                     .padding(.leading, 10)
                     .padding(.trailing, 9)
@@ -328,7 +330,7 @@ private struct CaptureSplitButton: View {
             }
             .keyboardShortcut(.defaultAction)
             .onHover { mainHover.isHovering = $0 }
-            .help("Capture an area (⇧⌘4)")
+            .help("Capture \(model.lastMode.rawValue) (\(model.lastMode.shortcut))")
 
             Rectangle().fill(Color.terracottaDeep.opacity(0.7)).frame(width: 1, height: 28)
 
@@ -357,9 +359,7 @@ private struct CaptureMenu: View {
 
     var body: some View {
         VStack(spacing: 1) {
-            CaptureOption(symbol: "rectangle.dashed", title: "Area", shortcut: "⇧⌘4", action: model.captureArea)
-            CaptureOption(symbol: "macwindow", title: "Window", shortcut: "Space", action: model.captureWindow)
-            CaptureOption(symbol: "display", title: "Screen", shortcut: "⇧⌘3", action: model.captureScreen)
+            ForEach(CaptureMode.allCases) { mode in CaptureOption(mode: mode) { model.capture(mode) } }
         }
         .padding(3)
         .frame(width: 168)
@@ -368,9 +368,7 @@ private struct CaptureMenu: View {
 }
 
 private struct CaptureOption: View {
-    let symbol: String
-    let title: String
-    let shortcut: String
+    let mode: CaptureMode
     let action: () -> Void
     @StateObject private var hover = HoverState()
 
@@ -378,10 +376,10 @@ private struct CaptureOption: View {
         let isOn = hover.isHovering
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: symbol).font(.system(size: 12, weight: .medium)).frame(width: 16)
-                Text(title).font(.system(size: 12, weight: .medium))
+                Image(systemName: mode.symbol).font(.system(size: 12, weight: .medium)).frame(width: 16)
+                Text(mode.title).font(.system(size: 12, weight: .medium))
                 Spacer()
-                Text(shortcut).font(.system(size: 10.5)).opacity(0.55)
+                Text(mode.shortcut).font(.system(size: 10.5)).opacity(0.55)
             }
             .foregroundStyle(isOn ? Color.cream : Color.ink)
             .padding(.horizontal, 8)
