@@ -16,6 +16,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                               backing: .buffered, defer: false)
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        // An empty unified toolbar centers the traffic lights 26pt from the top, matching the 52pt title bar below.
+        window.toolbar = NSToolbar()
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .none
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary] // open where the user is, even over fullscreen apps
@@ -302,8 +306,11 @@ private struct DockSeparator: View {
 }
 
 /// Title bar buttons: prominent is a framed terracotta button with a raised edge, the other a quiet cream outline.
+/// Both are 30pt tall overall; the prominent raised edge sits inside that height rather than below it.
 private struct PillButtonStyle: ButtonStyle {
     let prominent: Bool
+    private let height: CGFloat = 30
+    private let edge: CGFloat = 2
 
     func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -312,17 +319,17 @@ private struct PillButtonStyle: ButtonStyle {
             .labelStyle(.titleAndIcon)
             .foregroundStyle(prominent ? Color.white : Color.cream)
             .padding(.horizontal, 12)
-            .frame(height: 30)
+            .frame(height: prominent ? height - edge : height)
             .background {
                 if prominent {
-                    shape.fill(Color.terracotta)
-                        .overlay(shape.strokeBorder(Color.terracottaDeep))
-                        .background(shape.fill(Color.terracottaDeep).offset(y: 2))
+                    shape.fill(Color.terracotta).overlay(shape.strokeBorder(Color.terracottaDeep))
                 } else {
                     shape.fill(Color.cream.opacity(0.08))
                         .overlay(shape.strokeBorder(Color.cream.opacity(0.16)))
                 }
             }
+            .padding(.bottom, prominent ? edge : 0)
+            .background { if prominent { shape.fill(Color.terracottaDeep) } }
             .opacity(configuration.isPressed ? 0.75 : 1)
     }
 }
