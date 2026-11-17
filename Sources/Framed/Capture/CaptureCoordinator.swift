@@ -1,5 +1,27 @@
 import AppKit
 
+/// The ways to take a capture, as offered by the menu bar's Capture button.
+enum CaptureMode: String, CaseIterable, Identifiable {
+    case area, window, screen
+
+    var id: Self { self }
+    var title: String { rawValue.capitalized }
+    var symbol: String {
+        switch self {
+        case .area: "rectangle.dashed"
+        case .window: "macwindow"
+        case .screen: "display"
+        }
+    }
+    var shortcut: String {
+        switch self {
+        case .area: "⇧⌘4"
+        case .window: "Space"
+        case .screen: "⇧⌘3"
+        }
+    }
+}
+
 /// Runs the capture flow: freeze displays → overlay selection → open the annotation editor.
 @MainActor
 final class CaptureCoordinator {
@@ -13,6 +35,21 @@ final class CaptureCoordinator {
 
     /// Delay for captures started from the menu bar menu, so its fade-out isn't captured.
     static let menuDismissDelay: Duration = .milliseconds(250)
+
+    /// How the last completed capture was taken, from the menu or a hotkey (Space toggles count).
+    /// Persisted so the menu bar's Capture button offers it again after relaunch.
+    private(set) var lastMode: CaptureMode {
+        get { UserDefaults.standard.string(forKey: "lastCaptureMode").flatMap(CaptureMode.init) ?? .area }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "lastCaptureMode") }
+    }
+
+    func capture(_ mode: CaptureMode, after delay: Duration = .zero) {
+        switch mode {
+        case .area: captureInteractive(after: delay)
+        case .window: captureInteractive(after: delay, windowMode: true)
+        case .screen: captureFullscreen(after: delay)
+        }
+    }
 
     /// `windowMode` starts the overlay picking whole windows (Space still toggles it).
     func captureInteractive(after delay: Duration = .zero, windowMode: Bool = false) {
@@ -41,6 +78,7 @@ final class CaptureCoordinator {
                 let displays = try await ScreenCapturer.freezeDisplays()
                 let mouse = NSEvent.mouseLocation
                 guard let display = displays.first(where: { $0.screen.frame.contains(mouse) }) ?? displays.first else { return }
+                lastMode = .screen
                 openEditor(image: display.image, scale: display.scale)
             } catch {
                 presentError(error)
@@ -92,9 +130,11 @@ final class CaptureCoordinator {
 
         switch outcome {
         case .area(let rect):
+            lastMode = .area
             openCropped(display: display, rect: rect)
             isCapturing = false
         case .window(let window):
+            lastMode = .window
             Task {
                 defer { isCapturing = false }
                 do {
