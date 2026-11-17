@@ -156,9 +156,9 @@ final class OverlayView: NSView {
             drawSizeBadge(for: selection)
             if let mouse { drawLoupe(at: mouse, in: ctx) }
         } else if let highlight = hovered?.frame.intersection(bounds) {
-            ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor)
+            ctx.setFillColor(Theme.terracotta.withAlphaComponent(0.18).cgColor)
             ctx.fill(highlight)
-            ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
+            ctx.setStrokeColor(Theme.terracotta.cgColor)
             ctx.setLineWidth(3)
             ctx.stroke(highlight.insetBy(dx: 1.5, dy: 1.5))
         }
@@ -175,7 +175,7 @@ final class OverlayView: NSView {
         var badge = CGRect(x: rect.maxX - size.width - 16, y: rect.minY - size.height - 14, width: size.width + 16, height: size.height + 6)
         if badge.minY < bounds.minY + 4 { badge.origin.y = rect.minY + 8 }
         badge.origin.x = max(badge.minX, bounds.minX + 4)
-        NSColor.black.withAlphaComponent(0.75).setFill()
+        Theme.inkDeep.withAlphaComponent(0.85).setFill()
         NSBezierPath(roundedRect: badge, xRadius: 6, yRadius: 6).fill()
         text.draw(at: CGPoint(x: badge.minX + 8, y: badge.minY + 3))
     }

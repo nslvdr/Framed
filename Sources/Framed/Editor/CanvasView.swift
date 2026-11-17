@@ -165,7 +165,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     private func drawSelection(_ annotation: Annotation, in ctx: CGContext) {
-        let accent = NSColor.controlAccentColor.cgColor
+        let accent = Theme.terracotta.cgColor
         let outline = annotation.bounds.applying(transform).insetBy(dx: -4, dy: -4)
         ctx.saveGState()
         ctx.setStrokeColor(accent)

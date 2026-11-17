@@ -1,29 +1,21 @@
 import SwiftUI
 
-/// Menu bar–only app (LSUIElement). Captures are triggered from the menu or global hotkeys.
+/// Menu bar–only app (LSUIElement). Captures are triggered from the menu bar item or global hotkeys.
 @main
 struct FramedApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
+    /// The menu bar item is AppKit (`MenuBarController`); this empty scene only satisfies `App`.
     var body: some Scene {
-        MenuBarExtra("Framed", systemImage: "viewfinder") {
-            Button("Capture Area") { CaptureCoordinator.shared.captureInteractive(after: CaptureCoordinator.menuDismissDelay) }
-                .keyboardShortcut("4", modifiers: [.command, .shift])
-            Button("Capture Fullscreen") { CaptureCoordinator.shared.captureFullscreen(after: CaptureCoordinator.menuDismissDelay) }
-                .keyboardShortcut("3", modifiers: [.command, .shift])
-            Divider()
-            Button("Open Captures Folder") { Exporter.revealCapturesFolder() }
-            Button("Use ⇧⌘3 / ⇧⌘4 for Framed…") { SystemShortcuts.offerTakeover() }
-            Divider()
-            Button("Quit Framed") { NSApp.terminate(nil) }
-                .keyboardShortcut("q")
-        }
+        Settings { EmptyView() }
+            .commands { CommandGroup(replacing: .appSettings) {} }
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
+            MenuBarController.shared.install()
             HotKeys.registerDefaults()
             BackgroundCursor.enable()
             // One dialog per launch: the system permission prompt first, the shortcut offer later.

@@ -3,9 +3,16 @@ import AppKit
 /// Clipboard and file output for finished captures.
 @MainActor
 enum Exporter {
-    static var capturesFolder: URL {
+    nonisolated static var capturesFolder: URL {
         URL.picturesDirectory.appending(path: "Framed", directoryHint: .isDirectory)
     }
+
+    /// Copies of captures that were copied rather than saved, so they still show up in the menu bar
+    /// panel's "Recent". Lives in Caches and keeps only the newest `copiedLimit`.
+    nonisolated static var copiedFolder: URL {
+        URL.cachesDirectory.appending(path: "app.framed.Framed/Copied", directoryHint: .isDirectory)
+    }
+    nonisolated static let copiedLimit = 10
 
     /// PNG data tagged with the point size so Retina captures keep their 144 DPI.
     static func pngData(_ image: CGImage, scale: CGFloat) -> Data? {
@@ -14,8 +21,23 @@ enum Exporter {
         return rep.representation(using: .png, properties: [:])
     }
 
-    static func copy(_ image: CGImage, scale: CGFloat) {
+    /// Puts the capture on the clipboard and remembers it for "Recent".
+    static func copy(_ image: CGImage, scale: CGFloat, date: Date = .now) {
         guard let png = pngData(image, scale: scale) else { return }
+        putOnPasteboard(png)
+        try? FileManager.default.createDirectory(at: copiedFolder, withIntermediateDirectories: true)
+        let url = uniqueURL(in: copiedFolder, fileName: fileName(for: date)) { FileManager.default.fileExists(atPath: $0.path) }
+        try? png.write(to: url, options: .atomic)
+        prune(copiedFolder, keeping: copiedLimit)
+    }
+
+    /// Copies an existing PNG (a recent capture) to the clipboard again.
+    static func copyFile(_ url: URL) {
+        guard let png = try? Data(contentsOf: url) else { return }
+        putOnPasteboard(png)
+    }
+
+    private static func putOnPasteboard(_ png: Data) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setData(png, forType: .png)
@@ -46,6 +68,25 @@ enum Exporter {
     static func revealCapturesFolder() {
         try? FileManager.default.createDirectory(at: capturesFolder, withIntermediateDirectories: true)
         NSWorkspace.shared.open(capturesFolder)
+    }
+
+    /// The newest PNGs across `folders` (saved and copied captures by default), newest first.
+    nonisolated static func recentCaptures(in folders: [URL] = [capturesFolder, copiedFolder], limit: Int) -> [URL] {
+        let files = folders.flatMap { folder in
+            (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.creationDateKey],
+                                                          options: .skipsHiddenFiles)) ?? []
+        }
+        let dated = files.filter { $0.pathExtension.lowercased() == "png" }.map { url in
+            (url, (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast)
+        }
+        return dated.sorted { $0.1 > $1.1 }.prefix(limit).map(\.0)
+    }
+
+    /// Deletes all but the newest `count` PNGs in `folder`.
+    nonisolated static func prune(_ folder: URL, keeping count: Int) {
+        for url in recentCaptures(in: [folder], limit: .max).dropFirst(count) {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     /// e.g. "Framed 2026-11-17 at 20.12.03.png"
