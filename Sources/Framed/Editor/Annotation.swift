@@ -230,7 +230,8 @@ enum AnnotationRenderer {
             stroke(points, in: ctx, color: color, width: annotation.lineWidth)
 
         case .highlighter(let points):
-            ctx.setBlendMode(.multiply)
+            // Multiply makes markers look natural, but would make white (and near-white) invisible.
+            ctx.setBlendMode(isLight(annotation.color, threshold: 0.9) ? .normal : .multiply)
             stroke(points, in: ctx, color: annotation.color.withAlphaComponent(0.4).cgColor, width: annotation.lineWidth)
 
         case .pixelate(let rect):
@@ -301,8 +302,12 @@ enum AnnotationRenderer {
     }
 
     private static func contrastingTextColor(for color: NSColor) -> NSColor {
-        guard let rgb = color.usingColorSpace(.sRGB) else { return .white }
-        let luminance = 0.299 * rgb.redComponent + 0.587 * rgb.greenComponent + 0.114 * rgb.blueComponent
-        return luminance > 0.7 ? .black : .white
+        isLight(color) ? .black : .white
+    }
+
+    /// Perceived luminance above `threshold` (0…1). Yellow is ~0.77, white 1.
+    static func isLight(_ color: NSColor, threshold: CGFloat = 0.7) -> Bool {
+        guard let rgb = color.usingColorSpace(.sRGB) else { return false }
+        return 0.299 * rgb.redComponent + 0.587 * rgb.greenComponent + 0.114 * rgb.blueComponent > threshold
     }
 }

@@ -18,6 +18,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary] // open where the user is, even over fullscreen apps
         window.minSize = CGSize(width: 720, height: 460)
         window.title = "Framed"
         super.init(window: window)
@@ -38,6 +39,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func perform(_ command: EditorCommand) {
+        switch command {
+        case .undo: return canvas.undo()
+        case .redo: return canvas.redo()
+        default: break
+        }
         canvas.endTextEditing()
         editorDocument.finishCrop() // export what's on screen, including pending crop adjustments
         switch command {
@@ -54,6 +60,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             }
         case .close:
             window?.performClose(nil) // goes through windowShouldClose's confirmation
+            return
+        case .undo, .redo:
             return
         }
         close()
@@ -104,7 +112,7 @@ private struct EditorView: View {
                         OptionsPopover(document: document)
                             .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
                     }
-                    Dock(document: document)
+                    Dock(document: document, perform: perform)
                 }
                 .padding(.bottom, 18)
                 .animation(.snappy(duration: 0.2), value: document.isOptionsVisible)
@@ -163,6 +171,7 @@ private struct CanvasBackground: View {
 
 private struct Dock: View {
     @Bindable var document: EditorDocument
+    let perform: (EditorCommand) -> Void
 
     var body: some View {
         HStack(spacing: 2) {
@@ -195,9 +204,9 @@ private struct Dock: View {
 
             DockSeparator()
 
-            DockButton(symbol: "arrow.uturn.backward", help: "Undo  ⌘Z") { document.undo() }
+            DockButton(symbol: "arrow.uturn.backward", help: "Undo  ⌘Z") { perform(.undo) }
                 .disabled(!document.canUndo)
-            DockButton(symbol: "arrow.uturn.forward", help: "Redo  ⇧⌘Z") { document.redo() }
+            DockButton(symbol: "arrow.uturn.forward", help: "Redo  ⇧⌘Z") { perform(.redo) }
                 .disabled(!document.canRedo)
         }
         .padding(6)

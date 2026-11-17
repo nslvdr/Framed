@@ -1,7 +1,7 @@
 import AppKit
 
 enum EditorCommand {
-    case copy, save, close
+    case copy, save, close, undo, redo
 }
 
 /// Interactive editing surface, drawn over the editor's background. Fits the visible region
@@ -232,7 +232,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         document.showsOptions = false
         if textField != nil {
             endTextEditing()
-            return
+            if document.tool == .text { return } // with the Text tool, a click just finishes the text
         }
         let p = imagePoint(event)
         let raw = imagePoint(event, clamped: false)
@@ -317,6 +317,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             }
         case .draw:
             if let draft, draft.isMeaningful { document.add(draft) }
+        case .handle:
+            // Don't let resizing collapse an annotation into an invisible, ungrabbable sliver.
+            if liveEditStarted, document.selected?.isMeaningful == false { document.cancelLiveEdit() }
         default:
             break
         }
@@ -453,6 +456,20 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     // MARK: Keyboard
 
+    /// Undo that first settles in-progress work: cancels a drag, commits typed text, and
+    /// discards pending crop adjustments before touching history. Used by ⌘Z and the dock.
+    func undo() {
+        if gesture != nil { abortGesture() }
+        endTextEditing()
+        if document.pendingCrop != nil { document.pendingCrop = nil } else { document.undo() }
+    }
+
+    func redo() {
+        if gesture != nil { abortGesture() }
+        endTextEditing()
+        document.redo()
+    }
+
     /// Cancels an in-progress drag, restoring anything it changed live.
     private func abortGesture() {
         if liveEditStarted { document.cancelLiveEdit() }
@@ -469,14 +486,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case ([.command], "c"), ([.control], "c"): onCommand(.copy)
         case ([.command], "s"): onCommand(.save)
         case ([.command], "w"): onCommand(.close)
-        case ([.command], "z"):
-            if gesture != nil { abortGesture() }
-            endTextEditing()
-            if document.pendingCrop != nil { document.pendingCrop = nil } else { document.undo() }
-        case ([.command, .shift], "z"):
-            if gesture != nil { abortGesture() }
-            endTextEditing()
-            document.redo()
+        case ([.command], "z"): undo()
+        case ([.command, .shift], "z"): redo()
         default: return super.performKeyEquivalent(with: event)
         }
         return true

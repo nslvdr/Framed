@@ -116,16 +116,30 @@ final class CaptureCoordinator {
     // MARK: Editor
 
     private func openEditor(image: CGImage, scale: CGFloat) {
+        // While editors are open Framed shows in the Dock and ⌘Tab, so a window that slips
+        // behind another app can always be brought back.
+        NSApp.setActivationPolicy(.regular)
         let controller = EditorWindowController(document: EditorDocument(image: image, scale: scale), cascadeIndex: editors.count)
         controller.onClose = { [weak self, weak controller] in
             guard let self else { return }
             editors.removeAll { $0 === controller }
+            guard editors.isEmpty else { return }
+            NSApp.setActivationPolicy(.accessory)
             // Hand focus back to the app the user came from, so pasting works right away.
-            if editors.isEmpty, !isCapturing { NSApp.hide(nil) }
+            if !isCapturing { NSApp.hide(nil) }
         }
         editors.append(controller)
         controller.present()
     }
+
+    /// Brings open editors to the front (Dock icon click).
+    func showEditors() {
+        NSApp.activate()
+        editors.forEach { $0.window?.makeKeyAndOrderFront(nil) }
+    }
+
+    /// Number of open editors holding annotations that would be lost.
+    var unsavedEditorCount: Int { editors.count { $0.editorDocument.canUndo } }
 
     // MARK: Permission & errors
 
@@ -134,7 +148,7 @@ final class CaptureCoordinator {
         if CGRequestScreenCaptureAccess() { return true }
         let alert = NSAlert()
         alert.messageText = "Framed needs Screen Recording access"
-        alert.informativeText = "Enable Framed in System Settings → Privacy & Security → Screen & System Audio Recording, then try again."
+        alert.informativeText = "Enable Framed in System Settings → Privacy & Security → Screen & System Audio Recording. If macOS asks, let it quit and reopen Framed, then try again."
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")
         NSApp.activate()

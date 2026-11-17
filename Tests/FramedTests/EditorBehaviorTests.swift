@@ -64,3 +64,10 @@ struct EditorBehaviorTests {
         #expect(url.lastPathComponent == "Framed x (3).png")
     }
 }
+
+struct HighlighterBlendTests {
+    @Test func onlyNearWhiteSkipsTheMultiplyBlend() {
+        #expect(AnnotationRenderer.isLight(.white, threshold: 0.9))
+        #expect(!AnnotationRenderer.isLight(.systemYellow, threshold: 0.9)) // yellow keeps the marker look
+    }
+}
