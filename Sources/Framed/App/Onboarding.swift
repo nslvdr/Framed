@@ -53,6 +53,16 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
         if !CaptureCoordinator.shared.hasOpenEditors { NSApp.setActivationPolicy(.accessory) }
     }
 
+    /// Called by the capture hotkeys: pressing one once setup is complete means the user is ready,
+    /// so the window closes (and stays out of the capture). Returns whether it closed.
+    func dismissForCapture() -> Bool {
+        guard isVisible else { return false }
+        model.refresh() // the poll may not have caught the last step yet
+        guard model.isComplete else { return false }
+        finish()
+        return true
+    }
+
     func windowDidBecomeKey(_ notification: Notification) { model.refresh() }
 
     private func makeWindow() -> NSWindow {
