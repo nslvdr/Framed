@@ -301,8 +301,9 @@ private struct MenuPanelView: View {
                 Text("Framed").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.cream)
                 if let version { Text("Version \(version)").font(.system(size: 10.5)).foregroundStyle(Color.cream.opacity(0.55)) }
             }
-            Spacer()
+            Spacer(minLength: 8)
             CaptureSplitButton(model: model)
+                .fixedSize() // never truncate "Capture"; the title column gives way instead
         }
     }
 }
