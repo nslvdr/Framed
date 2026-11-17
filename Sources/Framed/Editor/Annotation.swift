@@ -1,12 +1,13 @@
 import AppKit
 
 enum Tool: String, CaseIterable, Identifiable {
-    case arrow, rect, text, pen, highlighter, pixelate, step, crop
+    case select, arrow, rect, text, pen, highlighter, pixelate, step, crop
 
     var id: Self { self }
 
     var title: String {
         switch self {
+        case .select: "Select"
         case .arrow: "Arrow"
         case .rect: "Rectangle"
         case .text: "Text"
@@ -20,6 +21,7 @@ enum Tool: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .select: "cursorarrow"
         case .arrow: "arrow.up.right"
         case .rect: "rectangle"
         case .text: "textformat"
@@ -34,6 +36,7 @@ enum Tool: String, CaseIterable, Identifiable {
     /// Single-key shortcut in the editor.
     var key: Character {
         switch self {
+        case .select: "v"
         case .arrow: "a"
         case .rect: "r"
         case .text: "t"
@@ -44,10 +47,21 @@ enum Tool: String, CaseIterable, Identifiable {
         case .crop: "c"
         }
     }
+
+    /// Whether the tool draws markup that has a color and size.
+    var isStyled: Bool { ![.select, .pixelate, .crop].contains(self) }
+}
+
+/// Thin / medium / bold. Scales stroke width, text size and step badge size.
+enum StrokeSize: Int, CaseIterable, Identifiable {
+    case thin, medium, bold
+    var id: Self { self }
+    var factor: CGFloat { [0.6, 1, 1.6][rawValue] }
+    var title: String { ["Thin", "Medium", "Bold"][rawValue] }
 }
 
 /// A markup element. All geometry is in image points with a top-left origin.
-struct Annotation {
+struct Annotation: Identifiable {
     enum Kind {
         case arrow(from: CGPoint, to: CGPoint)
         case rect(CGRect)
@@ -56,12 +70,41 @@ struct Annotation {
         case pixelate(CGRect)
         case step(center: CGPoint, number: Int)
         case text(origin: CGPoint, string: String)
+
+        /// Whether color and size mean anything for this kind.
+        var isStyled: Bool {
+            if case .pixelate = self { false } else { true }
+        }
     }
 
+    let id = UUID()
     var kind: Kind
     var color: NSColor
+    var size: StrokeSize = .medium
 
-    static var textFont: NSFont { .systemFont(ofSize: 24, weight: .bold) }
+    // MARK: Metrics
+
+    var lineWidth: CGFloat {
+        let base: CGFloat = switch kind {
+        case .arrow: 6
+        case .highlighter: 20
+        default: 4
+        }
+        return base * size.factor
+    }
+
+    var stepRadius: CGFloat { 15 * (1 + (size.factor - 1) * 0.6) }
+
+    static func font(for size: StrokeSize) -> NSFont {
+        .systemFont(ofSize: 24 * size.factor, weight: .bold)
+    }
+
+    var textAttributes: [NSAttributedString.Key: Any] {
+        let shadow = NSShadow()
+        shadow.shadowBlurRadius = 3
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+        return [.font: Self.font(for: size), .foregroundColor: color, .shadow: shadow]
+    }
 
     /// Whether a just-drawn annotation is big enough to keep (filters accidental clicks).
     var isMeaningful: Bool {
@@ -73,6 +116,91 @@ struct Annotation {
         case .text(_, let s): !s.isEmpty
         }
     }
+
+    // MARK: Selection geometry
+
+    /// Area covered on screen, used for the selection outline.
+    var bounds: CGRect {
+        switch kind {
+        case .arrow(let a, let b): CGRect(corners: a, b).insetBy(dx: -lineWidth, dy: -lineWidth)
+        case .rect(let r): r.insetBy(dx: -lineWidth / 2, dy: -lineWidth / 2)
+        case .pixelate(let r): r
+        case .pen(let pts), .highlighter(let pts): Self.boundingBox(pts).insetBy(dx: -lineWidth / 2, dy: -lineWidth / 2)
+        case .step(let c, _): CGRect(x: c.x - stepRadius, y: c.y - stepRadius, width: stepRadius * 2, height: stepRadius * 2)
+        case .text(let origin, let string): CGRect(origin: origin, size: NSAttributedString(string: string, attributes: textAttributes).size())
+        }
+    }
+
+    /// Whether `p` touches the annotation. Rectangles are hit on their outline only,
+    /// so markup inside them stays clickable.
+    func contains(_ p: CGPoint, tolerance: CGFloat) -> Bool {
+        switch kind {
+        case .arrow(let a, let b):
+            return Self.distance(p, toSegment: a, b) <= lineWidth + tolerance
+        case .rect(let r):
+            let outer = r.insetBy(dx: -(lineWidth / 2 + tolerance), dy: -(lineWidth / 2 + tolerance))
+            let inner = r.insetBy(dx: lineWidth / 2 + tolerance, dy: lineWidth / 2 + tolerance)
+            return outer.contains(p) && (inner.isNull || !inner.contains(p))
+        case .pen(let pts), .highlighter(let pts):
+            return zip(pts, pts.dropFirst()).contains { Self.distance(p, toSegment: $0, $1) <= lineWidth / 2 + tolerance }
+        case .pixelate, .step, .text:
+            return bounds.insetBy(dx: -tolerance, dy: -tolerance).contains(p)
+        }
+    }
+
+    func offsetBy(dx: CGFloat, dy: CGFloat) -> Annotation {
+        func move(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + dx, y: p.y + dy) }
+        var copy = self
+        copy.kind = switch kind {
+        case .arrow(let a, let b): .arrow(from: move(a), to: move(b))
+        case .rect(let r): .rect(r.offsetBy(dx: dx, dy: dy))
+        case .pixelate(let r): .pixelate(r.offsetBy(dx: dx, dy: dy))
+        case .pen(let pts): .pen(pts.map(move))
+        case .highlighter(let pts): .highlighter(pts.map(move))
+        case .step(let c, let n): .step(center: move(c), number: n)
+        case .text(let o, let s): .text(origin: move(o), string: s)
+        }
+        return copy
+    }
+
+    /// Draggable points: arrow endpoints, or rectangle corners (clockwise from top-left).
+    var handles: [CGPoint] {
+        switch kind {
+        case .arrow(let a, let b): [a, b]
+        case .rect(let r), .pixelate(let r):
+            [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)]
+        default: []
+        }
+    }
+
+    /// Returns a copy with handle `index` (from `handles`) dragged to `p`.
+    func movingHandle(_ index: Int, to p: CGPoint) -> Annotation {
+        var copy = self
+        switch kind {
+        case .arrow(let a, let b):
+            copy.kind = index == 0 ? .arrow(from: p, to: b) : .arrow(from: a, to: p)
+        case .rect:
+            copy.kind = .rect(CGRect(corners: handles[(index + 2) % 4], p))
+        case .pixelate:
+            copy.kind = .pixelate(CGRect(corners: handles[(index + 2) % 4], p))
+        default:
+            break
+        }
+        return copy
+    }
+
+    private static func boundingBox(_ pts: [CGPoint]) -> CGRect {
+        guard let first = pts.first else { return .null }
+        return pts.reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+    }
+
+    static func distance(_ p: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let lengthSquared = dx * dx + dy * dy
+        guard lengthSquared > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+        let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared))
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
 }
 
 /// Draws annotations into a context whose coordinate space is y-down (flipped)
@@ -80,29 +208,30 @@ struct Annotation {
 enum AnnotationRenderer {
     static func draw(_ annotation: Annotation, in ctx: CGContext, pixelated: CGImage?, imageBounds: CGRect) {
         let color = annotation.color.cgColor
+        let softShadow = NSColor.black.withAlphaComponent(0.3).cgColor
         ctx.saveGState()
         defer { ctx.restoreGState() }
 
         switch annotation.kind {
         case .arrow(let from, let to):
-            ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3, color: NSColor.black.withAlphaComponent(0.3).cgColor)
-            ctx.addPath(arrowPath(from: from, to: to, width: 6))
+            ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3, color: softShadow)
+            ctx.addPath(arrowPath(from: from, to: to, width: annotation.lineWidth))
             ctx.setFillColor(color)
             ctx.fillPath()
 
         case .rect(let rect):
-            ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3, color: NSColor.black.withAlphaComponent(0.3).cgColor)
+            ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3, color: softShadow)
             ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 4, cornerHeight: 4, transform: nil))
             ctx.setStrokeColor(color)
-            ctx.setLineWidth(4)
+            ctx.setLineWidth(annotation.lineWidth)
             ctx.strokePath()
 
         case .pen(let points):
-            stroke(points, in: ctx, color: color, width: 4)
+            stroke(points, in: ctx, color: color, width: annotation.lineWidth)
 
         case .highlighter(let points):
             ctx.setBlendMode(.multiply)
-            stroke(points, in: ctx, color: annotation.color.withAlphaComponent(0.4).cgColor, width: 20)
+            stroke(points, in: ctx, color: annotation.color.withAlphaComponent(0.4).cgColor, width: annotation.lineWidth)
 
         case .pixelate(let rect):
             guard let pixelated else { return }
@@ -110,7 +239,7 @@ enum AnnotationRenderer {
             drawImage(pixelated, in: imageBounds, ctx: ctx)
 
         case .step(let center, let number):
-            let radius: CGFloat = 15
+            let radius = annotation.stepRadius
             let circle = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
             ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3, color: NSColor.black.withAlphaComponent(0.35).cgColor)
             ctx.setFillColor(color)
@@ -120,21 +249,14 @@ enum AnnotationRenderer {
             ctx.setLineWidth(2)
             ctx.strokeEllipse(in: circle.insetBy(dx: 1, dy: 1))
             let label = NSAttributedString(string: "\(number)", attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 16, weight: .bold),
+                .font: NSFont.monospacedDigitSystemFont(ofSize: radius * 1.05, weight: .bold),
                 .foregroundColor: contrastingTextColor(for: annotation.color),
             ])
             let size = label.size()
             label.draw(at: CGPoint(x: center.x - size.width / 2, y: center.y - size.height / 2))
 
         case .text(let origin, let string):
-            let shadow = NSShadow()
-            shadow.shadowBlurRadius = 3
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
-            NSAttributedString(string: string, attributes: [
-                .font: Annotation.textFont,
-                .foregroundColor: annotation.color,
-                .shadow: shadow,
-            ]).draw(at: origin)
+            NSAttributedString(string: string, attributes: annotation.textAttributes).draw(at: origin)
         }
     }
 

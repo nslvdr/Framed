@@ -26,8 +26,20 @@ enum Exporter {
     static func save(_ image: CGImage, scale: CGFloat, date: Date = .now) throws -> URL {
         guard let png = pngData(image, scale: scale) else { throw CocoaError(.fileWriteUnknown) }
         try FileManager.default.createDirectory(at: capturesFolder, withIntermediateDirectories: true)
-        let url = capturesFolder.appending(path: fileName(for: date))
+        let url = uniqueURL(in: capturesFolder, fileName: fileName(for: date)) { FileManager.default.fileExists(atPath: $0.path) }
         try png.write(to: url, options: .atomic)
+        return url
+    }
+
+    /// `fileName` in `folder`, or "name (2).png", "name (3).png"… if taken, so saves never overwrite.
+    nonisolated static func uniqueURL(in folder: URL, fileName: String, exists: (URL) -> Bool) -> URL {
+        let base = (fileName as NSString).deletingPathExtension, ext = (fileName as NSString).pathExtension
+        var url = folder.appending(path: fileName)
+        var counter = 2
+        while exists(url) {
+            url = folder.appending(path: "\(base) (\(counter)).\(ext)")
+            counter += 1
+        }
         return url
     }
 

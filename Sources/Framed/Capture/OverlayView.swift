@@ -1,10 +1,11 @@
 import AppKit
 
-/// Transparent full-screen window hosting the selection overlay for one display.
-/// The live screen stays visible underneath; only selection UI is drawn on top.
-final class OverlayWindow: NSWindow {
+/// Transparent full-screen panel hosting the selection overlay for one display.
+/// The live screen stays visible underneath; only selection UI is drawn on top. It is a
+/// non-activating panel, so it takes keyboard input without deactivating the app being captured.
+final class OverlayWindow: NSPanel {
     init(screen: NSScreen, content: NSView) {
-        super.init(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         setFrame(screen.frame, display: false)
         level = .screenSaver
         isOpaque = false
@@ -13,6 +14,8 @@ final class OverlayWindow: NSWindow {
         ignoresMouseEvents = false // capture clicks even over fully transparent pixels
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         acceptsMouseMovedEvents = true
+        becomesKeyOnlyIfNeeded = false
+        hidesOnDeactivate = false
         isReleasedWhenClosed = false
         contentView = content
     }
@@ -34,19 +37,37 @@ final class OverlayView: NSView {
 
     private let frozen: CGImage
     private let windows: [WindowTarget]
-    private let onFinish: (Outcome?) -> Void
+    var onFinish: (Outcome?) -> Void = { _ in }
+    /// Space was pressed; the coordinator flips `windowMode` on every display's overlay.
+    var onToggleWindowMode: () -> Void = {}
 
     private var dragStart: CGPoint?
     private var selection: CGRect?
     private var hovered: WindowTarget?
     private var mouse: CGPoint?
-    private var windowMode = false
 
-    init(frame: CGRect, frozen: CGImage, windows: [WindowTarget], onFinish: @escaping (Outcome?) -> Void) {
+    var windowMode = false {
+        didSet {
+            selection = nil
+            if window?.isKeyWindow == true || mouse != nil { currentCursor.set() }
+            syncMouse()
+        }
+    }
+
+    init(frame: CGRect, frozen: CGImage, windows: [WindowTarget]) {
         self.frozen = frozen
         self.windows = windows
-        self.onFinish = onFinish
         super.init(frame: frame)
+    }
+
+    /// Picks up the current mouse position without waiting for a move event, so the loupe and
+    /// window highlight are right immediately.
+    func syncMouse() {
+        guard let window else { return }
+        let p = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        mouse = bounds.contains(p) ? p : nil
+        hovered = windowMode ? mouse.flatMap { m in windows.first { $0.frame.contains(m) } } : nil
+        needsDisplay = true
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -64,6 +85,7 @@ final class OverlayView: NSView {
     private var currentCursor: NSCursor { windowMode ? .pointingHand : .crosshair }
 
     override func mouseMoved(with event: NSEvent) {
+        currentCursor.set()
         let p = point(event)
         mouse = p
         hovered = windowMode ? windows.first { $0.frame.contains(p) } : nil
@@ -85,6 +107,7 @@ final class OverlayView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         guard !windowMode, let start = dragStart else { return }
+        currentCursor.set()
         let p = point(event)
         mouse = p
         let rect = CGRect(corners: start, p)
@@ -108,11 +131,7 @@ final class OverlayView: NSView {
         switch event.keyCode {
         case 53: onFinish(nil) // Esc
         case 49 where dragStart == nil: // Space toggles window mode, like the system tool
-            windowMode.toggle()
-            selection = nil
-            currentCursor.set()
-            if let mouse { hovered = windowMode ? windows.first { $0.frame.contains(mouse) } : nil }
-            needsDisplay = true
+            onToggleWindowMode()
         default: break
         }
     }
@@ -145,8 +164,10 @@ final class OverlayView: NSView {
         }
     }
 
+    /// Shows the selection size in pixels, matching the size shown in the editor.
     private func drawSizeBadge(for rect: CGRect) {
-        let text = NSAttributedString(string: "\(Int(rect.width.rounded())) × \(Int(rect.height.rounded()))", attributes: [
+        let pixels = Geometry.pixelRect(forViewRect: rect, viewSize: bounds.size, imageSize: CGSize(width: frozen.width, height: frozen.height))
+        let text = NSAttributedString(string: "\(Int(pixels.width)) × \(Int(pixels.height))", attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
             .foregroundColor: NSColor.white,
         ])
@@ -160,13 +181,10 @@ final class OverlayView: NSView {
     }
 
     /// Magnified, pixel-exact view of the area around the cursor for precise selection.
+    /// Draws the whole frozen frame scaled around the cursor and clipped to the circle, so it
+    /// never stretches near screen edges (off-screen parts are simply empty).
     private func drawLoupe(at p: CGPoint, in ctx: CGContext) {
         let size: CGFloat = 120, zoom: CGFloat = 8
-        let sourcePoints = size / zoom
-        let viewSource = CGRect(x: p.x - sourcePoints / 2, y: p.y - sourcePoints / 2, width: sourcePoints, height: sourcePoints)
-        let imageSize = CGSize(width: frozen.width, height: frozen.height)
-        let pixels = Geometry.pixelRect(forViewRect: viewSource, viewSize: bounds.size, imageSize: imageSize)
-        guard let crop = frozen.cropping(to: pixels) else { return }
 
         var origin = CGPoint(x: p.x + 24, y: p.y - 24 - size)
         if origin.x + size > bounds.maxX { origin.x = p.x - 24 - size }
@@ -176,8 +194,11 @@ final class OverlayView: NSView {
         ctx.saveGState()
         ctx.addEllipse(in: loupe)
         ctx.clip()
+        ctx.setFillColor(NSColor.black.cgColor)
+        ctx.fill(loupe)
         ctx.interpolationQuality = .none
-        ctx.draw(crop, in: loupe)
+        ctx.draw(frozen, in: CGRect(x: loupe.midX - p.x * zoom, y: loupe.midY - p.y * zoom,
+                                    width: bounds.width * zoom, height: bounds.height * zoom))
         ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.9).cgColor)
         ctx.setLineWidth(1)
         ctx.stroke(CGRect(x: loupe.midX - zoom / 2, y: loupe.midY - zoom / 2, width: zoom, height: zoom))

@@ -24,9 +24,10 @@ These replace the macOS screenshot shortcuts. On launch, Framed offers to turn t
 |---|---|
 | ⌘C / ⌃C / Return | Copy to clipboard and close |
 | ⌘S | Save PNG to `~/Pictures/Framed` and close |
-| Esc | Discard (or leave crop mode) |
+| Esc | Step back: cancel drag → close popover → deselect → leave crop → close (asks first if you annotated) |
+| V | Select: drag to move, handles to resize, Delete to remove, double-click text to edit |
 | ⌘Z / ⇧⌘Z | Undo / redo |
-| A R T P H B N C | Arrow, rectangle, text, pen, highlighter, pixelate, numbered step, crop |
+| A R T P H B N C | Arrow, rectangle, text (click existing text to edit), pen, highlighter, pixelate, numbered step, crop |
 
 ## Roadmap
 

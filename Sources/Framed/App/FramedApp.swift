@@ -7,9 +7,9 @@ struct FramedApp: App {
 
     var body: some Scene {
         MenuBarExtra("Framed", systemImage: "viewfinder") {
-            Button("Capture Area") { CaptureCoordinator.shared.captureInteractive() }
+            Button("Capture Area") { CaptureCoordinator.shared.captureInteractive(after: CaptureCoordinator.menuDismissDelay) }
                 .keyboardShortcut("4", modifiers: [.command, .shift])
-            Button("Capture Fullscreen") { CaptureCoordinator.shared.captureFullscreen() }
+            Button("Capture Fullscreen") { CaptureCoordinator.shared.captureFullscreen(after: CaptureCoordinator.menuDismissDelay) }
                 .keyboardShortcut("3", modifiers: [.command, .shift])
             Divider()
             Button("Open Captures Folder") { Exporter.revealCapturesFolder() }
@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
             HotKeys.registerDefaults()
+            BackgroundCursor.enable()
             if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
             SystemShortcuts.resolveConflictIfNeeded()
         }
